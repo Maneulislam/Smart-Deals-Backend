@@ -39,6 +39,26 @@ async function run() {
 
         const database = client.db("smart_db");
         const productsCollection = database.collection("products");
+        const bidsCollection = database.collection("bids");
+        const usersCollection = database.collection("users");
+
+
+
+        // POST USER (NO DUPLICATE)
+        app.post("/users", async (req, res) => {
+            const newUser = req.body;
+
+            const query = { email: newUser.email };
+            const existingUser = await usersCollection.findOne(query);
+
+            if (existingUser) {
+                return res.send({ exists: true });
+            }
+
+            const result = await usersCollection.insertOne(newUser);
+            res.send({ inserted: true, result });
+        });
+
 
 
 
@@ -96,6 +116,87 @@ async function run() {
             res.send(result);
         })
 
+
+
+        // Bids
+
+        app.get('/bids', async (req, res) => {
+            const email = req.query.email;
+            const query = {};
+            if (email) {
+                query.buyer_email = email;
+            }
+
+            const cursor = bidsCollection.find(query);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
+
+        app.get('/bids/single', async (req, res) => {
+
+            const email = req.query.email;
+
+            if (!email) {
+                return res.status(400).send({ message: "Email is required" });
+            }
+
+            const query = { buyer_email: email };
+            const result = await bidsCollection.findOne(query);
+
+            if (!result) {
+                return res.status(404).send({ message: "No bid found for this email" });
+            }
+        });
+
+
+
+        // Create a bid
+        app.post("/bids", async (req, res) => {
+
+            const newBid = req.body;
+            const result = await bidsCollection.insertOne(newBid);
+            res.send(result);
+
+        });
+
+
+
+        // Update a bid
+        app.patch("/bids/:id", async (req, res) => {
+
+            const id = req.params.id;
+            const filter = { _id: new ObjectId(id) };
+            const updatedBid = req.body;
+
+            const updateDoc = {
+                $set: {
+                    product: updatedBid.product,
+                    buyer_image: updatedBid.buyer_image,
+                    buyer_name: updatedBid.buyer_name,
+                    buyer_contact: updatedBid.buyer_contact,
+                    buyer_email: updatedBid.buyer_email,
+                    bid_price: updatedBid.bid_price,
+                    status: updatedBid.status,
+                },
+            };
+
+            const result = await bidsCollection.updateOne(filter, updateDoc);
+            res.send(result);
+
+        });
+
+
+
+        // Delete a bid
+        app.delete("/bids/:id", async (req, res) => {
+
+            const id = req.params.id;
+            const filter = { _id: new ObjectId(id) };
+            const result = await bidsCollection.deleteOne(filter);
+            res.send(result);
+
+        });
 
 
 
