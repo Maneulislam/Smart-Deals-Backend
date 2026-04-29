@@ -44,7 +44,7 @@ async function run() {
 
 
 
-        // POST USER (NO DUPLICATE)
+        // POST USER 
         app.post("/users", async (req, res) => {
             const newUser = req.body;
 
@@ -59,6 +59,17 @@ async function run() {
             res.send({ inserted: true, result });
         });
 
+
+        // Get recent products
+
+        app.get('/recent-products', async (req, res) => {
+            // const projectFields = { title: 1, price_min: 1, price_max: 1, image: 1 }
+            // const cursor = productsCollection.find().sort({ _id: 1 }).project(projectFields).limit(3);
+
+            const cursor = productsCollection.find().sort({ created_at: -1 }).limit(6);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
 
 
 
@@ -147,6 +158,15 @@ async function run() {
             if (!result) {
                 return res.status(404).send({ message: "No bid found for this email" });
             }
+        });
+
+
+        app.get('/products/bids/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { product: id };
+            const cursor = bidsCollection.find(query).sort({ bidPrice: -1 });
+            const result = await cursor.toArray();
+            res.send(result);
         });
 
 
