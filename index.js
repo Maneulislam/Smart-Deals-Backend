@@ -60,12 +60,12 @@ async function run() {
         });
 
 
+
+
+
         // Get recent products
 
         app.get('/recent-products', async (req, res) => {
-            // const projectFields = { title: 1, price_min: 1, price_max: 1, image: 1 }
-            // const cursor = productsCollection.find().sort({ _id: 1 }).project(projectFields).limit(3);
-
             const cursor = productsCollection.find().sort({ created_at: -1 }).limit(6);
             const result = await cursor.toArray();
             res.send(result);
@@ -82,9 +82,6 @@ async function run() {
 
 
         app.get('/products', async (req, res) => {
-            // const projectFields = { title: 1, price_min: 1, price_max: 1, image: 1 }
-            // const cursor = productsCollection.find().sort({ _id: 1 }).project(projectFields).limit(3);
-
             const cursor = productsCollection.find();
             const result = await cursor.toArray();
             res.send(result);
@@ -132,6 +129,9 @@ async function run() {
         // Bids
 
         app.get('/bids', async (req, res) => {
+
+            console.log("Headers", req.headers);
+
             const email = req.query.email;
             const query = {};
             if (email) {
