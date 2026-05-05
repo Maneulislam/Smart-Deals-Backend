@@ -32,6 +32,8 @@ const logger = (req, res, next) => {
 }
 
 
+// Firebase verify
+
 const verifyFirebaseToken = async (req, res, next) => {
     console.log("Verify token", req.headers.authorization);
 
@@ -55,6 +57,36 @@ const verifyFirebaseToken = async (req, res, next) => {
         return res.status(401).send({ message: "Unauthorized access" })
     }
 
+}
+
+
+
+
+// JWT Token verify
+
+const verifyJWTToken = (req, res, next) => {
+
+    const authorization = req.headers.authorization;
+
+    if (!authorization) {
+        return res.status(401).send({ message: "Unauthorized access" });
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+        return res.status(401).send({ message: "Unauthorized access" });
+    }
+
+
+    jwt.verify(token, process.env.JWT_TOKEN, (err, decoded) => {
+        if (err) {
+            return res.status(401).send({ message: "Unauthorized access" });
+        }
+
+        req.token_email = decoded.email;
+
+        next();
+    })
 }
 
 
@@ -188,24 +220,53 @@ async function run() {
 
         // Bids
 
-        app.get('/bids', logger, verifyFirebaseToken, async (req, res) => {
+        // JWT token
 
-            // console.log("Headers", req.headers);
+        app.get('/bids', verifyJWTToken, async (req, res) => {
+
+
 
             const email = req.query.email;
             const query = {};
             if (email) {
-                if (email !== req.token_email) {
-                    res.status(403).send({ message: "Forbidden access" })
-                }
-
                 query.buyerEmail = email;
+            }
+
+            if (email !== req.token_email) {
+                return res.status(403).send({ message: "Forbidden access" });
             }
 
             const cursor = bidsCollection.find(query);
             const result = await cursor.toArray();
             res.send(result);
         });
+
+
+
+
+
+
+
+        // Firebase verify
+
+        // app.get('/bids', logger, verifyFirebaseToken, async (req, res) => {
+
+        //     // console.log("Headers", req.headers);
+
+        //     const email = req.query.email;
+        //     const query = {};
+        //     if (email) {
+        //         if (email !== req.token_email) {
+        //             res.status(403).send({ message: "Forbidden access" })
+        //         }
+
+        //         query.buyerEmail = email;
+        //     }
+
+        //     const cursor = bidsCollection.find(query);
+        //     const result = await cursor.toArray();
+        //     res.send(result);
+        // });
 
 
         app.get('/bids/single', async (req, res) => {
