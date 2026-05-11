@@ -364,7 +364,12 @@ async function run() {
 run().catch(console.dir);
 
 
-// --- Start Server ---
-app.listen(PORT, () => {
-    console.log(`Server is running on ${PORT}`);
-});
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`Server is running on ${PORT}`);
+    });
+}
+
+// For Vercel (required!)
+module.exports = app;
