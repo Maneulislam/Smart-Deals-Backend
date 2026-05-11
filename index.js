@@ -27,7 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 
 
 const logger = (req, res, next) => {
-    console.log("Logging Information");
+    // console.log("Logging Information");
     next();
 }
 
@@ -35,7 +35,7 @@ const logger = (req, res, next) => {
 // Firebase verify
 
 const verifyFirebaseToken = async (req, res, next) => {
-    console.log("Verify token", req.headers.authorization);
+    // console.log("Verify token", req.headers.authorization);
 
     if (!req.headers.authorization) {
         return res.status(401).send({ message: "Unauthorized access" })
@@ -49,11 +49,11 @@ const verifyFirebaseToken = async (req, res, next) => {
     try {
         const userInfo = await admin.auth().verifyIdToken(token);
         req.token_email = userInfo.email;
-        console.log("After validation", userInfo);
+        // console.log("After validation", userInfo);
         next();
     }
     catch {
-        console.log("Invalid token");
+        // console.log("Invalid token");
         return res.status(401).send({ message: "Unauthorized access" })
     }
 
