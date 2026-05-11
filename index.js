@@ -2,107 +2,64 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-const app = express();
-const PORT = process.env.PORT || 3000;
 const admin = require("firebase-admin");
 var jwt = require('jsonwebtoken');
 
+const app = express();
+const PORT = process.env.PORT || 3000;
 
+// --- Firebase Init ---
 const decoded = Buffer.from(process.env.FIREBASE_SERVICE_KEY, "base64").toString("utf8");
 const serviceAccount = JSON.parse(decoded);
-
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 
-
-
-
 // --- Middleware ---
 app.use(cors());
-
-// Parse incoming JSON payloads
 app.use(express.json());
-// Parse URL-encoded payloads
 app.use(express.urlencoded({ extended: true }));
 
-
-const logger = (req, res, next) => {
-    // console.log("Logging Information");
-    next();
-}
-
-
-// Firebase verify
-
+// --- Firebase Token Verify ---
 const verifyFirebaseToken = async (req, res, next) => {
-    // console.log("Verify token", req.headers.authorization);
-
     if (!req.headers.authorization) {
-        return res.status(401).send({ message: "Unauthorized access" })
+        return res.status(401).send({ message: "Unauthorized access" });
     }
-
     const token = req.headers.authorization.split(' ')[1];
     if (!token) {
-        return res.status(401).send({ message: "Unauthorized access" })
+        return res.status(401).send({ message: "Unauthorized access" });
     }
-
     try {
         const userInfo = await admin.auth().verifyIdToken(token);
         req.token_email = userInfo.email;
-        // console.log("After validation", userInfo);
         next();
+    } catch {
+        return res.status(401).send({ message: "Unauthorized access" });
     }
-    catch {
-        // console.log("Invalid token");
-        return res.status(401).send({ message: "Unauthorized access" })
-    }
+};
 
-}
-
-
-
-
-// JWT Token verify
-
+// --- JWT Token Verify ---
 const verifyJWTToken = (req, res, next) => {
-
     const authorization = req.headers.authorization;
-
     if (!authorization) {
         return res.status(401).send({ message: "Unauthorized access" });
     }
-
     const token = authorization.split(' ')[1];
     if (!token) {
         return res.status(401).send({ message: "Unauthorized access" });
     }
-
-
     jwt.verify(token, process.env.JWT_TOKEN, (err, decoded) => {
         if (err) {
             return res.status(401).send({ message: "Unauthorized access" });
         }
-
         req.token_email = decoded.email;
-
         next();
-    })
-}
+    });
+};
 
-
-
+// --- MongoDB Connection (Cached for Vercel Serverless) ---
 const uri = process.env.DB_URI;
-
-
-// --- Routes ---
-// Basic test route
-app.get('/', (req, res) => {
-    res.send('Smart Deals Server is Running');
-});
-
-
 const client = new MongoClient(uri, {
     serverApi: {
         version: ServerApiVersion.v1,
@@ -110,266 +67,164 @@ const client = new MongoClient(uri, {
         deprecationErrors: true,
     }
 });
-async function run() {
-    try {
-        // Connect the client to the server	(optional starting in v4.7)
+
+let isConnected = false; // connection cache flag
+
+async function connectDB() {
+    if (!isConnected) {
         await client.connect();
-
-        const database = client.db("smart_db");
-        const productsCollection = database.collection("products");
-        const bidsCollection = database.collection("bids");
-        const usersCollection = database.collection("users");
-
-
-
-
-
-
-        // JWT Related
-
-        app.post('/get-token', (req, res) => {
-            const loggedUser = req.body;
-
-            const token = jwt.sign(loggedUser, process.env.JWT_TOKEN, { expiresIn: "1h" });
-            res.send({ token: token })
-        })
-
-
-
-
-
-        // POST USER 
-        app.post("/users", async (req, res) => {
-            const newUser = req.body;
-
-            const query = { email: newUser.email };
-            const existingUser = await usersCollection.findOne(query);
-
-            if (existingUser) {
-                return res.send({ exists: true });
-            }
-
-            const result = await usersCollection.insertOne(newUser);
-            res.send({ inserted: true, result });
-        });
-
-
-
-
-
-        // Get recent products
-
-        app.get('/recent-products', async (req, res) => {
-            const cursor = productsCollection.find().sort({ created_at: -1 }).limit(6);
-            const result = await cursor.toArray();
-            res.send(result);
-        });
-
-
-
-        app.post('/products', verifyFirebaseToken, async (req, res) => {
-            const newProduct = req.body;
-            const result = await productsCollection.insertOne(newProduct);
-            res.send(result);
-
-        })
-
-
-        app.get('/products', async (req, res) => {
-            const cursor = productsCollection.find();
-            const result = await cursor.toArray();
-            res.send(result);
-        });
-
-
-
-
-
-
-
-        // GET a single product
-        app.get('/products/:id', async (req, res) => {
-            const id = req.params.id;
-            const query = { _id: new ObjectId(id) };
-            const result = await productsCollection.findOne(query);
-            res.send(result);
-        });
-
-
-
-
-        app.patch("/products/:id", async (req, res) => {
-            const id = req.params.id;
-            const query = { _id: new ObjectId(id) };
-            const updatedProduct = req.body;
-
-            const updateDoc = {
-                $set: {
-                    name: updatedProduct.name,
-                    price: updatedProduct.price
-                }
-            }
-            const result = await productsCollection.updateOne(query, updateDoc);
-            res.send(result);
-        })
-
-
-
-        app.delete("/products/:id", async (req, res) => {
-            const id = req.params.id;
-            const query = { _id: new ObjectId(id) };
-            const result = await productsCollection.deleteOne(query);
-            res.send(result);
-        })
-
-
-
-        // Bids
-
-        // JWT token
-
-        app.get('/bids', verifyJWTToken, async (req, res) => {
-
-
-
-            const email = req.query.email;
-            const query = {};
-            if (email) {
-                query.buyerEmail = email;
-            }
-
-            if (email !== req.token_email) {
-                return res.status(403).send({ message: "Forbidden access" });
-            }
-
-            const cursor = bidsCollection.find(query);
-            const result = await cursor.toArray();
-            res.send(result);
-        });
-
-
-
-
-
-
-
-        // Firebase verify
-
-        // app.get('/bids', logger, verifyFirebaseToken, async (req, res) => {
-
-        //     // console.log("Headers", req.headers);
-
-        //     const email = req.query.email;
-        //     const query = {};
-        //     if (email) {
-        //         if (email !== req.token_email) {
-        //             res.status(403).send({ message: "Forbidden access" })
-        //         }
-
-        //         query.buyerEmail = email;
-        //     }
-
-        //     const cursor = bidsCollection.find(query);
-        //     const result = await cursor.toArray();
-        //     res.send(result);
-        // });
-
-
-        app.get('/bids/single', async (req, res) => {
-
-            const email = req.query.email;
-
-            if (!email) {
-                return res.status(400).send({ message: "Email is required" });
-            }
-
-            const query = { buyer_email: email };
-            const result = await bidsCollection.findOne(query);
-
-            if (!result) {
-                return res.status(404).send({ message: "No bid found for this email" });
-            }
-        });
-
-
-        app.get('/products/bids/:id', verifyFirebaseToken, async (req, res) => {
-            const id = req.params.id;
-            const query = { product: id };
-            const cursor = bidsCollection.find(query).sort({ bidPrice: -1 });
-            const result = await cursor.toArray();
-            res.send(result);
-        });
-
-
-
-        // Create a bid
-        app.post("/bids", async (req, res) => {
-
-            const newBid = req.body;
-            const result = await bidsCollection.insertOne(newBid);
-            res.send(result);
-
-        });
-
-
-
-        // Update a bid
-        app.patch("/bids/:id", async (req, res) => {
-
-            const id = req.params.id;
-            const filter = { _id: new ObjectId(id) };
-            const updatedBid = req.body;
-
-            const updateDoc = {
-                $set: {
-                    product: updatedBid.product,
-                    buyer_image: updatedBid.buyer_image,
-                    buyer_name: updatedBid.buyer_name,
-                    buyer_contact: updatedBid.buyer_contact,
-                    buyer_email: updatedBid.buyer_email,
-                    bid_price: updatedBid.bid_price,
-                    status: updatedBid.status,
-                },
-            };
-
-            const result = await bidsCollection.updateOne(filter, updateDoc);
-            res.send(result);
-
-        });
-
-
-
-        // Delete a bid
-        app.delete("/bids/:id", async (req, res) => {
-
-            const id = req.params.id;
-            const filter = { _id: new ObjectId(id) };
-            const result = await bidsCollection.deleteOne(filter);
-            res.send(result);
-
-        });
-
-
-
-
-
-        // Send a ping to confirm a successful connection
-        // await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
-    } finally {
-        // Ensures that the client will close when you finish/error
-        // await client.close();
+        isConnected = true;
+        console.log("Connected to MongoDB!");
     }
+    return client;
 }
-run().catch(console.dir);
 
+// --- DB Collections Helper ---
+async function getCollections() {
+    const client = await connectDB();
+    const database = client.db("smart_db");
+    return {
+        productsCollection: database.collection("products"),
+        bidsCollection: database.collection("bids"),
+        usersCollection: database.collection("users"),
+    };
+}
 
-// For local development
+// =====================
+// --- Routes ---
+// =====================
+
+// Health check
+app.get('/', (req, res) => {
+    res.send('Smart Deals Server is Running');
+});
+
+// JWT Token
+app.post('/get-token', (req, res) => {
+    const loggedUser = req.body;
+    const token = jwt.sign(loggedUser, process.env.JWT_TOKEN, { expiresIn: "1h" });
+    res.send({ token });
+});
+
+// POST User
+app.post("/users", async (req, res) => {
+    const { usersCollection } = await getCollections();
+    const newUser = req.body;
+    const existingUser = await usersCollection.findOne({ email: newUser.email });
+    if (existingUser) return res.send({ exists: true });
+    const result = await usersCollection.insertOne(newUser);
+    res.send({ inserted: true, result });
+});
+
+// GET Recent Products
+app.get('/recent-products', async (req, res) => {
+    const { productsCollection } = await getCollections();
+    const result = await productsCollection.find().sort({ created_at: -1 }).limit(6).toArray();
+    res.send(result);
+});
+
+// GET All Products
+app.get('/products', async (req, res) => {
+    const { productsCollection } = await getCollections();
+    const result = await productsCollection.find().toArray();
+    res.send(result);
+});
+
+// POST Product
+app.post('/products', verifyFirebaseToken, async (req, res) => {
+    const { productsCollection } = await getCollections();
+    const result = await productsCollection.insertOne(req.body);
+    res.send(result);
+});
+
+// GET Single Product
+app.get('/products/:id', async (req, res) => {
+    const { productsCollection } = await getCollections();
+    const result = await productsCollection.findOne({ _id: new ObjectId(req.params.id) });
+    res.send(result);
+});
+
+// PATCH Product
+app.patch("/products/:id", async (req, res) => {
+    const { productsCollection } = await getCollections();
+    const { name, price } = req.body;
+    const result = await productsCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: { name, price } }
+    );
+    res.send(result);
+});
+
+// DELETE Product
+app.delete("/products/:id", async (req, res) => {
+    const { productsCollection } = await getCollections();
+    const result = await productsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+    res.send(result);
+});
+
+// GET Bids (JWT protected)
+app.get('/bids', verifyJWTToken, async (req, res) => {
+    const { bidsCollection } = await getCollections();
+    const email = req.query.email;
+    if (email !== req.token_email) {
+        return res.status(403).send({ message: "Forbidden access" });
+    }
+    const query = email ? { buyerEmail: email } : {};
+    const result = await bidsCollection.find(query).toArray();
+    res.send(result);
+});
+
+// GET Single Bid by email
+app.get('/bids/single', async (req, res) => {
+    const { bidsCollection } = await getCollections();
+    const { email } = req.query;
+    if (!email) return res.status(400).send({ message: "Email is required" });
+    const result = await bidsCollection.findOne({ buyer_email: email });
+    if (!result) return res.status(404).send({ message: "No bid found for this email" });
+    res.send(result);
+});
+
+// GET Bids for a Product (Firebase protected)
+app.get('/products/bids/:id', verifyFirebaseToken, async (req, res) => {
+    const { bidsCollection } = await getCollections();
+    const result = await bidsCollection
+        .find({ product: req.params.id })
+        .sort({ bidPrice: -1 })
+        .toArray();
+    res.send(result);
+});
+
+// POST Bid
+app.post("/bids", async (req, res) => {
+    const { bidsCollection } = await getCollections();
+    const result = await bidsCollection.insertOne(req.body);
+    res.send(result);
+});
+
+// PATCH Bid
+app.patch("/bids/:id", async (req, res) => {
+    const { bidsCollection } = await getCollections();
+    const { product, buyer_image, buyer_name, buyer_contact, buyer_email, bid_price, status } = req.body;
+    const result = await bidsCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: { product, buyer_image, buyer_name, buyer_contact, buyer_email, bid_price, status } }
+    );
+    res.send(result);
+});
+
+// DELETE Bid
+app.delete("/bids/:id", async (req, res) => {
+    const { bidsCollection } = await getCollections();
+    const result = await bidsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+    res.send(result);
+});
+
+// --- Start Server (local only) ---
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
-        console.log(`Server is running on ${PORT}`);
+        console.log(`Server is running on port ${PORT}`);
     });
 }
 
-// For Vercel (required!)
+// --- Export for Vercel ---
 module.exports = app;
