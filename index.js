@@ -13,9 +13,12 @@ const decoded = Buffer.from(process.env.FIREBASE_SERVICE_KEY, "base64").toString
 const serviceAccount = JSON.parse(decoded);
 
 
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-});
+// ✅ FIXED: Only initialize if no app exists yet (prevents crash on Vercel warm restarts)
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+}
 
 
 
@@ -355,7 +358,7 @@ async function run() {
 
 
         // Send a ping to confirm a successful connection
-        // await client.db("admin").command({ ping: 1 });
+        await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error
